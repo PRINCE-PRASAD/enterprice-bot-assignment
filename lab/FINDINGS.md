@@ -60,9 +60,7 @@ Each workload sets `securityContext.runAsNonRoot: true` and does not set `runAsU
 
 **Fix:**
 
-Added `runAsUser: 65532` next to `runAsNonRoot: true` in `lab/broken-chart/templates/migrate-job.yaml`. `65532` is the numeric uid for the image user named `nonroot`, so kubelet can verify the process is not root. Removing `runAsNonRoot` would also let the pod start, but it would drop the non-root check. The image repository and tag were left unchanged.
-
-The same `runAsUser` line is still required on `backend.yaml`, `gateway.yaml`, `worker.yaml`, `reporter.yaml`, and `metrics.yaml`. This edit only covers the migrate Job.
+Added `runAsUser: 65532` next to `runAsNonRoot: true` on every workload that sets it: `migrate-job.yaml`, `backend.yaml`, `gateway.yaml`, `worker.yaml`, `reporter.yaml`, and `metrics.yaml`. `65532` is the numeric uid for the image user named `nonroot`, confirmed by the migrate Job reaching `Completed` after the same line was applied there. Removing `runAsNonRoot` would also let the pods start, but it would drop the non-root check. The image repository and tag were left unchanged.
 
 **How I found it:**
 
@@ -74,11 +72,39 @@ The same `runAsUser` line is still required on `backend.yaml`, `gateway.yaml`, `
 
 **Symptom:**
 
+After `runAsUser` was set, new backend, gateway, and reporter pods reached `Running` but stayed `0/1` ready. `./scenario.sh verify` still failed `backend does not answer on http://backend:8080/healthz`. Describing a new backend pod:
+
+```
+Warning  Unhealthy  kubelet  spec.containers{backend}: Readiness probe failed: Get "http://10.244.0.22:8080/healthz": dial tcp 10.244.0.22:8080: connect: connection refused
+```
+
+The container log said it was not listening on that port:
+
+```
+kubectl -n debug-lab logs backend-794c558bfb-khvwd --tail=5
+2026/11/20 18:17:01 eb-debug-app 2.0.0 starting: mode=api pod=backend-794c558bfb-khvwd listening on :8081 (image default is 8081; set PORT to override)
+```
+
+Gateway and reporter logged the same line with `listening on :8081`.
+
 **Cause:**
+
+The image listens on 8081 unless `PORT` is set. The chart never set `PORT`. Probes, `containerPort`, the backend and reporter Services, and `./scenario.sh verify` all use `common.port`, which is 8080, so every probe connected to a port with nothing on it.
 
 **Fix:**
 
+Added this env entry to `backend.yaml`, `gateway.yaml`, `worker.yaml`, `reporter.yaml`, and `metrics.yaml`:
+
+```yaml
+- name: PORT
+  value: {{ .Values.common.port | quote }}
+```
+
+That makes the process listen on 8080, the same value the probes and Services already use. Changing `common.port` to 8081 would move the probes, but `verify` calls `http://backend:8080/healthz` and `http://reporter:8080/report`, so the Service port has to stay 8080. The image repository and tag were left unchanged.
+
 **How I found it:**
+
+`kubectl get pods -n debug-lab` showed the new pods `Running` and the Deployments still `0/1` ready. `kubectl describe pod` on the new backend pod showed the readiness probe failing with `connection refused` on port 8080. `kubectl logs` on that pod, and on the gateway and reporter pods, said the process was listening on 8081 and that `PORT` overrides it. `values.yaml` has `common.port: 8080`, and the templates pass that to `containerPort` and the probe port, but not to `PORT`.
 
 ---
 
