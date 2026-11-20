@@ -112,11 +112,23 @@ That makes the process listen on 8080, the same value the probes and Services al
 
 **Symptom:**
 
+The reporter pod stayed `0/1` ready and `./scenario.sh verify` reported `ServiceAccount debug-lab/reporter cannot list pods`. The reporter log showed the denial:
+
+```
+2026/11/20 18:32:48 pod list failed: kubernetes API returned HTTP 403: {"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"pods is forbidden: User \"system:serviceaccount:debug-lab:reporter\" cannot list resource \"pods\" in API group \"\" in the namespace \"debug-lab\"","reason":"Forbidden","details":{"kind":"pods"},"code":403}
+```
+
 **Cause:**
+
+`lab/broken-chart/templates/rbac.yaml` created the `reporter-read` Role, which grants `get` and `list` on `pods`, and a RoleBinding to it. The RoleBinding's subject was `ServiceAccount` `default`, but the reporter pod runs as `reporter` (`serviceAccountName` in `values.yaml`). The `reporter` ServiceAccount therefore had no permission, and the Role was granted to a different account.
 
 **Fix:**
 
+Changed the RoleBinding subject in `rbac.yaml` from `name: default` to `name: reporter`. The Role itself was already correct. After the change, `kubectl auth can-i list pods -n debug-lab --as=system:serviceaccount:debug-lab:reporter` returned `yes`, and the reporter's 403 errors stopped.
+
 **How I found it:**
+
+`./scenario.sh verify` reported the RBAC check failing while the pods were otherwise running. The reporter log gave the 403 with the exact ServiceAccount. `kubectl auth can-i` reproduced the failure, and reading `rbac.yaml` and `reporter.yaml` showed the subject and the pod's `serviceAccountName` did not match.
 
 ---
 
@@ -124,11 +136,23 @@ That makes the process listen on 8080, the same value the probes and Services al
 
 **Symptom:**
 
+The gateway pod stayed `0/1` ready with a readiness probe returning `503`. Its log showed the backend lookup failing:
+
+```
+2026/11/20 18:32:45 readiness failed: backend not reachable: GET http://backend.default.svc:8080/healthz: Get "http://backend.default.svc:8080/healthz": dial tcp: lookup backend.default.svc on 10.96.0.10:53: no such host
+```
+
 **Cause:**
+
+`lab/broken-chart/values.yaml` set the gateway's `BACKEND_URL` to `http://backend.default.svc:8080`. The lab is deployed to the `debug-lab` namespace, so the backend Service is `backend.debug-lab.svc`. The `default` namespace has no `backend` Service, so DNS returned `no such host`.
 
 **Fix:**
 
+Changed `BACKEND_URL` in `values.yaml` to `http://backend.debug-lab.svc:8080`. After the change the gateway reached `1/1 Running`.
+
 **How I found it:**
+
+The gateway readiness probe returned `503`, and `kubectl logs` on the gateway pod showed the DNS lookup failing for `backend.default.svc`. The `kubectl describe` events showed the `Unhealthy` readiness events for the same pod. Checking `values.yaml` showed the hostname used the `default` namespace.
 
 ---
 
@@ -136,11 +160,23 @@ That makes the process listen on 8080, the same value the probes and Services al
 
 **Symptom:**
 
+The worker pods went into `CrashLoopBackOff` with `Error`, then `CrashLoopBackOff` with rising restart counts. The previous container's log showed the cause:
+
+```
+2026/11/20 18:31:53 FATAL: worker could not initialise its cache: mkdir /var/cache/app: read-only file system — the process needs a writable directory at /var/cache/app (mount a volume there, or set CACHE_DIR)
+```
+
 **Cause:**
+
+The worker's container sets `readOnlyRootFilesystem: true`, which makes the whole root filesystem read-only. The app needs to create `/var/cache/app` at startup. The chart provided no writable volume there, so the process exited with status 1 each time it started.
 
 **Fix:**
 
+In `lab/broken-chart/templates/worker.yaml`, added an `emptyDir` volume named `cache` and mounted it at `/var/cache/app`. `readOnlyRootFilesystem: true` was left in place, so the root filesystem is still read-only and only the cache directory is writable. After the change the worker reached `1/1 Running`.
+
 **How I found it:**
+
+The pod list showed `CrashLoopBackOff` on the worker, and `kubectl logs --previous` on the crashed container showed the `FATAL` line. The message named `/var/cache/app`, and the chart's `readOnlyRootFilesystem: true` explained why the directory could not be created.
 
 ---
 
