@@ -40,11 +40,33 @@ Changed `restartPolicy` from `Always` to `OnFailure`. `OnFailure` retries the co
 
 **Symptom:**
 
+After the Job was accepted, `kubectl get pods -n debug-lab` showed every pod, including `migrate-q6rzw`, stuck in `CreateContainerConfigError`. Describing the backend pod:
+
+```
+kubectl describe pod backend-7948fd6b4b-hz6nr -n debug-lab
+```
+
+```
+State:          Waiting
+  Reason:       CreateContainerConfigError
+Warning  Failed  kubelet  spec.containers{backend}: Error: container has runAsNonRoot and image has non-numeric user (nonroot), cannot verify user is non-root
+```
+
+The image pull itself succeeded (`Successfully pulled image "docker.io/ebinterview/eb-debug-app:1.0.1"`). The container never started.
+
 **Cause:**
+
+Each workload sets `securityContext.runAsNonRoot: true` and does not set `runAsUser`. The image user is the name `nonroot`, not a uid. Kubelet will only honour `runAsNonRoot` when it can check a numeric uid, so it refuses to create the container. The same `securityContext` is on the migrate Job and on backend, gateway, worker, reporter, and metrics.
 
 **Fix:**
 
+Added `runAsUser: 65532` next to `runAsNonRoot: true` in `lab/broken-chart/templates/migrate-job.yaml`. `65532` is the numeric uid for the image user named `nonroot`, so kubelet can verify the process is not root. Removing `runAsNonRoot` would also let the pod start, but it would drop the non-root check. The image repository and tag were left unchanged.
+
+The same `runAsUser` line is still required on `backend.yaml`, `gateway.yaml`, `worker.yaml`, `reporter.yaml`, and `metrics.yaml`. This edit only covers the migrate Job.
+
 **How I found it:**
+
+`kubectl get pods -n debug-lab` showed `CreateContainerConfigError` on every pod, including the migrate pod created after Defect 1. `kubectl describe pod` on the backend pod had a kubelet `Failed` event that named `runAsNonRoot` and the non-numeric user `nonroot`. The templates set `runAsNonRoot: true` with no `runAsUser`.
 
 ---
 

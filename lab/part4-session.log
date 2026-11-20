@@ -1,143 +1,0 @@
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004hkind delete cluster --name demo[31Dkubectl --context kind-demo -n demo get pods
-kubectl --context kind-demo -n demo get ingress[K
-[K
-curl -H "Host: demo.local" http://localhost/[K
-curl -H "Host: demo.local" http://localhost/healthz[K[A[A[1B[1B[4A[33Ckind delete cluster --name demo             [1B[K[1B[K[1B[K[1B[K[4A[64C                         k  cclear[?2004l[1B[3J[H[2J[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h[7mkubectl config current-context[27m[30D[27mk[27mu[27mb[27me[27mc[27mt[27ml[27m [27mc[27mo[27mn[27mf[27mi[27mg[27m [27mc[27mu[27mr[27mr[27me[27mn[27mt[27m-[27mc[27mo[27mn[27mt[27me[27mx[27mt[?2004l
-kind-demo
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h[7mcd lab[27m[27mc[27md[27m [27ml[27ma[27mb[?2004l
-cd: no such file or directory: lab
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h[7m./scenario.sh up[27m[16D[27m.[27m/[27ms[27mc[27me[27mn[27ma[27mr[27mi[27mo[27m.[27ms[27mh[27m [27mu[27mp[?2004l
-==> applying cluster environment (cluster-state/)
-namespace/debug-lab created
-Error from server (NotFound): error when creating "cluster-state/limits.yaml": namespaces "debug-lab" not found
-==> installing the broken chart
-Release "debug-lab" does not exist. Installing it now.
-Error: server-side apply failed for object debug-lab/migrate batch/v1, Kind=Job: Job.batch "migrate" is invalid: spec.template.spec.restartPolicy: Required value: valid values: "OnFailure", "Never"
-
-[2mhelm reported an error. That is not your machine misbehaving —[0m
-[2mit is part of the exercise. Read the error; it is evidence.[0m
-
-Lab is (partially) installed. Investigate with kubectl, fix the chart,
-re-run './scenario.sh up' to apply your fixes, and './scenario.sh verify'
-to check progress.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h./scenario.sh up\\    verift y[?2004l
-==> verifying goal state in namespace debug-lab
-  [31mFAIL[0m  migrate Job has not completed (does it exist? did the chart even install cleanly?)
-  [31mFAIL[0m  deployment backend: 0/1 ready
-  [31mFAIL[0m  deployment gateway: 0/1 ready
-  [31mFAIL[0m  deployment worker: 0/1 ready
-  [31mFAIL[0m  deployment reporter: 0/1 ready
-  [31mFAIL[0m  deployment metrics: 0/1 ready
-  [32mPASS[0m  no pods in CrashLoopBackOff
-  [31mFAIL[0m  ServiceAccount debug-lab/reporter cannot list pods
-  [31mFAIL[0m  backend does not answer on http://backend:8080/healthz
-  [31mFAIL[0m  gateway /status does not report backend=ok
-  [31mFAIL[0m  reporter /report does not return a pod count
-
-[31m10 check(s) failing[0m, 1 passing. Keep digging — every failure is a symptom.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h./scenario.sh verifyup    [?2004l
-==> applying cluster environment (cluster-state/)
-limitrange/debug-lab-guardrails created
-namespace/debug-lab unchanged
-==> installing the broken chart
-Release "debug-lab" has been upgraded. Happy Helming!
-NAME: debug-lab
-LAST DEPLOYED: Fri Nov 20 23:14:26 2026
-NAMESPACE: [36mdebug-lab[0m
-STATUS: [32mdeployed[0m
-REVISION: 2
-DESCRIPTION: Upgrade complete
-TEST SUITE: None
-NOTES:
-debug-lab installed into namespace debug-lab.
-
-Goal state:
-  * migrate Job: Completed
-  * backend, gateway, worker, reporter, metrics: all pods Running and 1/1 Ready
-  * gateway /status reports {"self":"ok","backend":"ok",...}
-
-Check your progress at any time:
-  ./scenario.sh verify
-
-Lab is (partially) installed. Investigate with kubectl, fix the chart,
-re-run './scenario.sh up' to apply your fixes, and './scenario.sh verify'
-to check progress.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h./scenario.sh upverify[?2004l
-==> verifying goal state in namespace debug-lab
-  [31mFAIL[0m  migrate Job has not completed (does it exist? did the chart even install cleanly?)
-  [31mFAIL[0m  deployment backend: 0/1 ready
-  [31mFAIL[0m  deployment gateway: 0/1 ready
-  [31mFAIL[0m  deployment worker: 0/1 ready
-  [31mFAIL[0m  deployment reporter: 0/1 ready
-  [31mFAIL[0m  deployment metrics: 0/1 ready
-  [32mPASS[0m  no pods in CrashLoopBackOff
-  [31mFAIL[0m  ServiceAccount debug-lab/reporter cannot list pods
-  [31mFAIL[0m  backend does not answer on http://backend:8080/healthz
-  [31mFAIL[0m  gateway /status does not report backend=ok
-  [31mFAIL[0m  reporter /report does not return a pod count
-
-[31m10 check(s) failing[0m, 1 passing. Keep digging — every failure is a symptom.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h./scenario.sh verify[?2004l
-==> verifying goal state in namespace debug-lab
-  [31mFAIL[0m  migrate Job has not completed (does it exist? did the chart even install cleanly?)
-  [31mFAIL[0m  deployment backend: 0/1 ready
-  [31mFAIL[0m  deployment gateway: 0/1 ready
-  [31mFAIL[0m  deployment worker: 0/1 ready
-  [31mFAIL[0m  deployment reporter: 0/1 ready
-  [31mFAIL[0m  deployment metrics: 0/1 ready
-  [32mPASS[0m  no pods in CrashLoopBackOff
-  [31mFAIL[0m  ServiceAccount debug-lab/reporter cannot list pods
-  [31mFAIL[0m  backend does not answer on http://backend:8080/healthz
-  [31mFAIL[0m  gateway /status does not report backend=ok
-  [31mFAIL[0m  reporter /report does not return a pod count
-
-[31m10 check(s) failing[0m, 1 passing. Keep digging — every failure is a symptom.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h[7mkubectl -n debug-lab get job migrate[27m[36D[27mk[27mu[27mb[27me[27mc[27mt[27ml[27m [27m-[27mn[27m [27md[27me[27mb[27mu[27mg[27m-[27ml[27ma[27mb[27m [27mg[27me[27mt[27m [27mj[27mo[27mb[27m [27mm[27mi[27mg[27mr[27ma[27mt[27me[?2004l
-NAME      STATUS    COMPLETIONS   DURATION   AGE
-migrate   Running   0/1           3m38s      3m38s
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004hkubectl -n debug-lab get job migrate[36D./scenario.sh verify                [16Dup    [?2004l
-==> applying cluster environment (cluster-state/)
-limitrange/debug-lab-guardrails unchanged
-namespace/debug-lab unchanged
-==> installing the broken chart
-Release "debug-lab" has been upgraded. Happy Helming!
-NAME: debug-lab
-LAST DEPLOYED: Fri Nov 20 23:18:24 2026
-NAMESPACE: [36mdebug-lab[0m
-STATUS: [32mdeployed[0m
-REVISION: 3
-DESCRIPTION: Upgrade complete
-TEST SUITE: None
-NOTES:
-debug-lab installed into namespace debug-lab.
-
-Goal state:
-  * migrate Job: Completed
-  * backend, gateway, worker, reporter, metrics: all pods Running and 1/1 Ready
-  * gateway /status reports {"self":"ok","backend":"ok",...}
-
-Check your progress at any time:
-  ./scenario.sh verify
-
-Lab is (partially) installed. Investigate with kubectl, fix the chart,
-re-run './scenario.sh up' to apply your fixes, and './scenario.sh verify'
-to check progress.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h./scenario.sh up[16Dkubectl -n debug-lab get job migrate[36D./scenario.sh verify                [16D[?2004l
-==> verifying goal state in namespace debug-lab
-  [31mFAIL[0m  migrate Job has not completed (does it exist? did the chart even install cleanly?)
-  [31mFAIL[0m  deployment backend: 0/1 ready
-  [31mFAIL[0m  deployment gateway: 0/1 ready
-  [31mFAIL[0m  deployment worker: 0/1 ready
-  [31mFAIL[0m  deployment reporter: 0/1 ready
-  [31mFAIL[0m  deployment metrics: 0/1 ready
-  [32mPASS[0m  no pods in CrashLoopBackOff
-  [31mFAIL[0m  ServiceAccount debug-lab/reporter cannot list pods
-  [31mFAIL[0m  backend does not answer on http://backend:8080/healthz
-  [31mFAIL[0m  gateway /status does not report backend=ok
-  [31mFAIL[0m  reporter /report does not return a pod count
-
-[31m10 check(s) failing[0m, 1 passing. Keep digging — every failure is a symptom.
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004h./scenario.sh verifyup    [16Dkubectl -n debug-lab get job migrate[?2004l
-NAME      STATUS    COMPLETIONS   DURATION   AGE
-migrate   Running   0/1           4m24s      4m24s
-[1m[7m%[27m[1m[0m                                                                                                           [0m[27m[24m[Jprince@Princes-MacBook-Air lab % [K[?2004hgget  g  kubectl -n debug-lab get job migrate[36D./scenario.sh verify                [16D
