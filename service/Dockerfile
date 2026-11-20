@@ -1,11 +1,11 @@
 # Builder only compiles the module. The runtime image does not keep build caches.
-FROM python:3.12.8-slim-bookworm AS builder
+FROM python:3.12.16-slim-trixie AS builder
 
 WORKDIR /build
 COPY app.py .
 RUN python -m py_compile app.py
 
-FROM python:3.12.8-slim-bookworm
+FROM python:3.12.16-slim-trixie
 
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
