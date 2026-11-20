@@ -89,22 +89,22 @@ Gateway and reporter logged the same line with `listening on :8081`.
 
 **Cause:**
 
-The image listens on 8081 unless `PORT` is set. The chart never set `PORT`. Probes, `containerPort`, the backend and reporter Services, and `./scenario.sh verify` all use `common.port`, which is 8080, so every probe connected to a port with nothing on it.
+The image listens on 8081 only when `PORT` is unset. That 8081 in the log is the image default from before the fix, not a port the chart was changed to. The chart never set `PORT`. Probes, `containerPort`, the backend and reporter Services, and `./scenario.sh verify` all use `common.port`, which is 8080, so every probe connected to a port with nothing on it.
 
 **Fix:**
 
-Added this env entry to `backend.yaml`, `gateway.yaml`, `worker.yaml`, `reporter.yaml`, and `metrics.yaml`:
+`common.port` stayed `8080`. Nothing was moved to 8081. Added this env entry to `backend.yaml`, `gateway.yaml`, `worker.yaml`, `reporter.yaml`, and `metrics.yaml` so the process listens on the same port the probes and Services already use:
 
 ```yaml
 - name: PORT
   value: {{ .Values.common.port | quote }}
 ```
 
-That makes the process listen on 8080, the same value the probes and Services already use. Changing `common.port` to 8081 would move the probes, but `verify` calls `http://backend:8080/healthz` and `http://reporter:8080/report`, so the Service port has to stay 8080. The image repository and tag were left unchanged.
+`./scenario.sh verify` calls `http://backend:8080/healthz` and `http://reporter:8080/report`, so the Service port has to stay 8080. The image repository and tag were left unchanged.
 
 **How I found it:**
 
-`kubectl get pods -n debug-lab` showed the new pods `Running` and the Deployments still `0/1` ready. `kubectl describe pod` on the new backend pod showed the readiness probe failing with `connection refused` on port 8080. `kubectl logs` on that pod, and on the gateway and reporter pods, said the process was listening on 8081 and that `PORT` overrides it. `values.yaml` has `common.port: 8080`, and the templates pass that to `containerPort` and the probe port, but not to `PORT`.
+`kubectl get pods -n debug-lab` showed the new pods `Running` and the Deployments still `0/1` ready. `kubectl describe pod` on the new backend pod showed the readiness probe failing with `connection refused` on port 8080. `kubectl logs` on that pod, and on the gateway and reporter pods, said the process was listening on 8081 and that `PORT` overrides that default. `values.yaml` has `common.port: 8080`, and the templates pass that to `containerPort` and the probe port, but did not pass it to `PORT`.
 
 ---
 
@@ -202,6 +202,48 @@ Changed the metrics CPU in `values.yaml` to `requests.cpu: "50m"` and `limits.cp
 **How I found it:**
 
 `kubectl -n debug-lab get deploy` showed `metrics` at `0/1` with `UP-TO-DATE 0`, and there was no metrics pod. `kubectl -n debug-lab get rs -l app=metrics` showed ReplicaSets with `CURRENT 0`. `kubectl get events` on those ReplicaSets reported `FailedCreate` and named the LimitRange ceiling (`maximum cpu usage per Container is 1, but limit is 4`). `values.yaml` had the metrics CPU limit at `4`.
+
+---
+
+## Defect 8 (unresolved, not fixable in the chart)
+
+**Symptom:**
+
+`reporter` stays `0/1` ready, so `./scenario.sh verify` keeps failing `deployment reporter: 0/1 ready` and `reporter /report does not return a pod count`. Both endpoints return the same body:
+
+```
+curl -i http://127.0.0.1:18080/report
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{"error":"parse pod list: unexpected end of JSON input","status":"unhealthy"}
+```
+
+The reporter log repeats `pod list failed: parse pod list: unexpected end of JSON input`. The API server log shows `Timeout or abort while handling` and `Post-timeout activity` for `GET /api/v1/namespaces/debug-lab/pods?limit=100`, so the connection is closed before the response is complete.
+
+**Cause:**
+
+The request itself is correct. The same URL, with the reporter's ServiceAccount (`kubectl get --raw '/api/v1/namespaces/debug-lab/pods?limit=100' --as=system:serviceaccount:debug-lab:reporter`), returns a 50,715-byte valid `PodList` in about 0.05 s. RBAC, `NAMESPACE`, and `PORT` are correct.
+
+In the reporter binary (`eb-debug-app`, `1.0.1`), the code that calls `parse pod list` is preceded by an instruction that sets a slice length of `0x400` (1024 bytes), `movq $0x400, 0x10(%rax)`. Only that many bytes are read from the API response. One real pod entry is several kilobytes, so the JSON is cut off in the middle of an object, and the parser reports `unexpected end of JSON input`.
+
+The user-reported local test reproduced the same boundary outside the cluster: a 1008-byte PodList returns `200` from `/healthz`, and a 1039-byte PodList returns the same `503`. This was not re-run as part of this write-up.
+
+**Fix:**
+
+No chart change fixes this. The URL and the 1024-byte read are compiled into the image. A single live pod object cannot be made smaller than 1024 bytes, and the image repository and tag must not change, so the chart cannot make the response fit. The reporter cannot pass in this lab without a different image build.
+
+Things ruled out during the investigation:
+- RBAC (`can-i list pods` returns `yes`, and the RoleBinding subject is `reporter`).
+- The API URL and namespace (`/api/v1/namespaces/debug-lab/pods?limit=100` is correct).
+- CPU and memory limits (raising the reporter to 1 CPU / 256Mi did not change the error, so it was reverted).
+- Port (`PORT=8080` is set and `/healthz` answers).
+
+Platform note: the node is `arm64` and the image is `amd64`, so the image runs under emulation. That was an early theory and is not the cause of the 1024-byte read. It may affect speed, but the byte limit is the reason the body is cut off.
+
+**How I found it:**
+
+`kubectl -n debug-lab get pods` showed the reporter at `0/1` after every other pod was `Ready`. `kubectl logs` showed the parse error on every 5-second probe. Checking the API server log showed the connection was aborted, not refused, so the problem was on the reporter side. `kubectl get --raw` with the reporter identity returned a valid list, which ruled out the cluster and RBAC. Searching the binary for `parse pod list` and disassembling the code around it found the `0x400` slice length.
 
 ---
 
