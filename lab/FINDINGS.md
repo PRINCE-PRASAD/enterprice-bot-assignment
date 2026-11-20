@@ -180,5 +180,30 @@ The pod list showed `CrashLoopBackOff` on the worker, and `kubectl logs --previo
 
 ---
 
+## Defect 7
+
+**Symptom:**
+
+`./scenario.sh verify` reported `deployment metrics: 0/1 ready`, and `kubectl -n debug-lab get pods` showed no metrics pod at all. The ReplicaSet could not create one:
+
+```
+kubectl -n debug-lab get events --sort-by=.lastTimestamp
+Warning  FailedCreate  replicaset/metrics-7664f6554c  Error creating: pods "metrics-7664f6554c-9ndpc" is forbidden: maximum cpu usage per Container is 1, but limit is 4
+```
+
+**Cause:**
+
+`lab/broken-chart/values.yaml` set the metrics container to `requests.cpu: "2"` and `limits.cpu: "4"`. The namespace LimitRange in `lab/cluster-state/limits.yaml` (the environment, not edited) sets `max.cpu: "1"` per container. The API server rejected every metrics pod at admission, so the Deployment stayed at 0 available.
+
+**Fix:**
+
+Changed the metrics CPU in `values.yaml` to `requests.cpu: "50m"` and `limits.cpu: "200m"`, the same values the other workloads use and under the LimitRange max of 1. Memory was already within the 512Mi cap and was left as `64Mi` / `128Mi`. `cluster-state/` was not modified. After `./scenario.sh up`, `./scenario.sh verify` reported `PASS  deployment metrics: 1/1 ready`.
+
+**How I found it:**
+
+`kubectl -n debug-lab get deploy` showed `metrics` at `0/1` with `UP-TO-DATE 0`, and there was no metrics pod. `kubectl -n debug-lab get rs -l app=metrics` showed ReplicaSets with `CURRENT 0`. `kubectl get events` on those ReplicaSets reported `FailedCreate` and named the LimitRange ceiling (`maximum cpu usage per Container is 1, but limit is 4`). `values.yaml` had the metrics CPU limit at `4`.
+
+---
+
 If you ran out of time on any defect, say so here and describe what you would
 have tried next — that section is read carefully and counts in your favour.
