@@ -1,0 +1,10 @@
+Release {{ .Release.Name }} is installed in namespace {{ .Release.Namespace }}.
+
+Service: {{ include "demo.fullname" . }}
+Ingress host: {{ .Values.ingress.host }}
+
+Verify from the repository root:
+
+  kubectl --context kind-demo -n {{ .Release.Namespace }} get pods,svc,ingress
+  curl -sS --resolve {{ .Values.ingress.host }}:80:127.0.0.1 http://{{ .Values.ingress.host }}/
+  curl -sS --resolve {{ .Values.ingress.host }}:80:127.0.0.1 http://{{ .Values.ingress.host }}/healthz

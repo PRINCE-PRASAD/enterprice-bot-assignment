@@ -1,0 +1,35 @@
+replicaCount: 2
+
+image:
+  repository: demo-service
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+# Container listen port. The process reads PORT from the environment.
+containerPort: 8080
+
+config:
+  appName: demo
+  version: "1.0.0"
+
+ingress:
+  className: nginx
+  host: demo.local
+  path: /
+  pathType: Prefix
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
