@@ -219,7 +219,16 @@ Content-Type: application/json
 {"error":"parse pod list: unexpected end of JSON input","status":"unhealthy"}
 ```
 
-The reporter log repeats `pod list failed: parse pod list: unexpected end of JSON input`. The API server log shows `Timeout or abort while handling` and `Post-timeout activity` for `GET /api/v1/namespaces/debug-lab/pods?limit=100`, so the connection is closed before the response is complete.
+The reporter log repeats `pod list failed: parse pod list: unexpected end of JSON input` every 5 seconds, and the readiness probe on `/healthz` returns 503 each time.
+
+```
+2026/11/21 06:00:52 pod list failed: parse pod list: unexpected end of JSON input
+2026/11/21 06:00:52 GET /healthz -> 503 (from 10.244.0.1:35210)
+
+Warning  Unhealthy  103s (x1333 over 10h)  kubelet  spec.containers{reporter}: Readiness probe failed: HTTP probe failed with statuscode: 503
+```
+
+The API server logged `Timeout or abort while handling` for `GET /api/v1/namespaces/debug-lab/pods?limit=100` once, at 19:52 UTC on Nov 20. The log has no further entries for it, so that line is not used as evidence for this defect.
 
 **Cause:**
 
@@ -227,7 +236,21 @@ The request itself is correct. The same URL, with the reporter's ServiceAccount 
 
 In the reporter binary (`eb-debug-app`, `1.0.1`), the code that calls `parse pod list` is preceded by an instruction that sets a slice length of `0x400` (1024 bytes), `movq $0x400, 0x10(%rax)`. Only that many bytes are read from the API response. One real pod entry is several kilobytes, so the JSON is cut off in the middle of an object, and the parser reports `unexpected end of JSON input`.
 
-The user-reported local test reproduced the same boundary outside the cluster: a 1008-byte PodList returns `200` from `/healthz`, and a 1039-byte PodList returns the same `503`. This was not re-run as part of this write-up.
+**Controlled test (reproduces the boundary outside the cluster):**
+
+The real image, `docker.io/ebinterview/eb-debug-app:1.0.1`, ran in Docker with `APP_MODE=reporter`, `NAMESPACE=debug-lab`, and `PORT=8090`. A local fake API server served HTTPS on `kubernetes.default.svc` and returned a valid PodList of an exact size. The cluster was not touched.
+
+| PodList size | `/report` | Reporter log |
+|---|---|---|
+| 600 bytes | 200, `"pods":1` | none |
+| 1000 bytes | 200, `"pods":1` | none |
+| 1024 bytes | 200, `"pods":1` | none |
+| 1025 bytes | 503, `unexpected end of JSON input` | `pod list failed: parse pod list: unexpected end of JSON input` |
+| 1100 bytes | 503 | same |
+| 2000 bytes | 503 | same |
+| 50000 bytes | 503 | same |
+
+The fake server logged each size it served. The failure starts at 1025 bytes, which matches the 1024-byte read in the binary. The earlier user-reported figures (1008 and 1039 bytes) are consistent with this result but were not repeated.
 
 **Fix:**
 
@@ -239,11 +262,13 @@ Things ruled out during the investigation:
 - CPU and memory limits (raising the reporter to 1 CPU / 256Mi did not change the error, so it was reverted).
 - Port (`PORT=8080` is set and `/healthz` answers).
 
-Platform note: the node is `arm64` and the image is `amd64`, so the image runs under emulation. That was an early theory and is not the cause of the 1024-byte read. It may affect speed, but the byte limit is the reason the body is cut off.
+Platform note: the node is `arm64` and the image is `amd64`, so the image runs under emulation. That was an early theory. The controlled test ran the same amd64 image under emulation and still reproduced the 1025-byte failure, so emulation is not the cause.
+
+**Why readiness fails:** `/healthz` returns 503 whenever the last pod-list fetch failed. The reporter therefore stays `Running` but `0/1 Ready`, and the Service has no ready endpoint.
 
 **How I found it:**
 
-`kubectl -n debug-lab get pods` showed the reporter at `0/1` after every other pod was `Ready`. `kubectl logs` showed the parse error on every 5-second probe. Checking the API server log showed the connection was aborted, not refused, so the problem was on the reporter side. `kubectl get --raw` with the reporter identity returned a valid list, which ruled out the cluster and RBAC. Searching the binary for `parse pod list` and disassembling the code around it found the `0x400` slice length.
+`kubectl -n debug-lab get pods` showed the reporter `Running` at `0/1` after every other pod was `Ready`. `kubectl describe pod` showed `Ready: False` and the readiness probe failing with 503. `kubectl logs` showed the parse error on every probe. `kubectl get --raw` with the reporter identity returned a valid 50,715-byte list, which ruled out the cluster and RBAC. Searching the binary for `parse pod list` and disassembling the code around it found the `0x400` slice length. The controlled test above confirmed the boundary at 1024 bytes.
 
 ---
 
