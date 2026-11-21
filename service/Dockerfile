@@ -7,6 +7,12 @@ RUN python -m py_compile app.py
 
 FROM python:3.12.16-slim-trixie
 
+# Pick up distro security fixes that already exist for this base (for example zlib1g).
+# Packages with no fix yet are left as they are; the Trivy gate reports those.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
 
